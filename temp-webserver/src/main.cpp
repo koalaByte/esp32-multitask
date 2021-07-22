@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include "index_page.h"
 
 #define TASKSTACK1  1024 
 #define TASKSTACK2  8192
@@ -15,12 +16,14 @@ static const int led_pin = LED_BUILTIN;
 // Task Handles
 static TaskHandle_t task_1 = NULL; //blink task
 static TaskHandle_t task_2 = NULL; //sensorsTask
-static TaskHandle_t task_3 = NULL; //wifi comm. task
-static TaskHandle_t task_4 = NULL; //wifi comm. task
+static TaskHandle_t task_3 = NULL; //wifi setup task
+static TaskHandle_t task_4 = NULL; //webserver task
 
 // Queue Setting
-static const uint8_t msg_queue_len = 5;
-static QueueHandle_t msg_queue;
+static const uint8_t temp_msg_queue_len = 5;
+static QueueHandle_t temp_msg_queue;
+static const uint8_t adc_msg_queue_len = 5;
+static QueueHandle_t adc_msg_queue;
 
 // global vars
 volatile uint16_t led_on_time = (300 / portTICK_PERIOD_MS);
@@ -36,14 +39,9 @@ uint8_t temprature_sens_read();
 #endif
 uint8_t temprature_sens_read();
 
-// IPv4 setup
-IPAddress local_IP(192, 168, 1, 5);
-// Gateway IP address
-IPAddress gateway(192, 168, 1, 1);
-
-IPAddress subnet(255, 255, 0, 0);
-IPAddress primaryDNS(8, 8, 8, 8);
-IPAddress secondaryDNS(8, 8, 4, 4);
+String readTemperature();
+String readADC();
+String processor(const String& var);
 
 // AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -63,31 +61,59 @@ void sensorHub(void *parameter){
   uint16_t raw_adc = analogRead(32);
   while(1){
     temp_val = (temprature_sens_read() - 32) / 1.8;
+    if(xQueueSend(temp_msg_queue, (void *)&temp_val, 10) != pdTRUE){
+      ESP_LOGW("sensorHub", "Temperature Queue Full!");
+    }
     ESP_LOGI("sensor", "Core temperature: %f deg. C", temp_val);
-    //sensor discontinued thus constantly at 53.3 deg
+    //onboard sensor discontinued thus constantly at 53.3 deg
     
-    raw_adc = analogRead(32);
-    ESP_LOGI("sensor", "Raw ADC value at pin 32: %u", raw_adc);
+    raw_adc = analogRead(33);
+    if(xQueueSend(adc_msg_queue, (void *)&raw_adc, 10) != pdTRUE){
+      ESP_LOGW("sensorHub", "ADC Queue Full!");
+    }
+    ESP_LOGI("sensor", "Raw ADC value at pin 33: %u", raw_adc);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
 void wifiStWs(void *parameter){
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    ESP_LOGE("wifi","STA Failed to configure");
-  }
+  Serial.begin(115200);
   WiFi.softAP(FACTORY_WIFI_SSID, FACTORY_WIFI_PSSWD);
+  Serial.println(WiFi.softAPIP());
   while(1){
     vTaskDelay(led_on_time);
   }
 }
 
+void asnWebServ(void *parameter){
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html, processor);
+  });
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", readTemperature().c_str());
+  });
+  server.on("/adc", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/plain", readADC().c_str());
+  });
+
+  // Start server
+  server.begin();
+
+  while(1){
+    vTaskDelay(led_on_time);
+  }
+}
+
+
+
 void setup() {
   // Config GPIO
   pinMode(led_pin, OUTPUT);
 
-  // Create queue
-  msg_queue = xQueueCreate(msg_queue_len, sizeof(int));
+  // Create queues
+  temp_msg_queue = xQueueCreate(temp_msg_queue_len, sizeof(int));
+  adc_msg_queue = xQueueCreate(adc_msg_queue_len, sizeof(int));
 
   // Create task: Task to run forever
   xTaskCreatePinnedToCore(    // use xTaskCreate in original FreeRTOS
@@ -121,7 +147,7 @@ void setup() {
   );
 
   xTaskCreatePinnedToCore(
-              wifiStWs,
+              asnWebServ,
               "Async Webserver",
               TASKSTACK4,
               NULL,
@@ -133,4 +159,42 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
+}
+
+String readTemperature(){
+  float t = 0.0;
+  if(xQueueReceive(temp_msg_queue, (void *)&t, 10) == pdTRUE){
+    ESP_LOGV("tempQ","Received Packet value: %f", t);
+  }
+
+  // Check if any reads failed and exit early (to try again).
+  if(t == 0){    
+    // Serial.println("Failed to read from DHT sensor!");
+    return "--";
+  }else{
+    return String(t);
+  }
+}
+
+String readADC(){
+  uint16_t a = 0;
+  if(xQueueReceive(adc_msg_queue, (void *)&a, 10) == pdTRUE){
+    ESP_LOGV("adcQ","Received Packet value: %u", a);
+  }
+  if(a == 0){
+    return "--";
+  }else {
+    return String(a);
+  }
+}
+
+// Replaces placeholder with Queue values
+String processor(const String& var){
+  if(var == "TEMPERATURE"){
+    return readTemperature();
+  }
+  else if(var == "ADC"){
+    return readADC();
+  }
+  return String();
 }
