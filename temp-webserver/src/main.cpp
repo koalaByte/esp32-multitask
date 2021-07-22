@@ -20,6 +20,17 @@ static QueueHandle_t msg_queue;
 volatile uint16_t led_on_time = (300 / portTICK_PERIOD_MS);
 volatile uint16_t led_off_time = (700 / portTICK_PERIOD_MS);
 
+// temperature API, for internal sensor
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
+uint8_t temprature_sens_read();
+
+
 void toggleLED(void *parameter){
   while(1){
     digitalWrite(led_pin, LOW);
@@ -30,8 +41,16 @@ void toggleLED(void *parameter){
 }
 
 void sensorHub(void *parameter){
+  float temp_val = (temprature_sens_read() - 32) / 1.8;
+  uint16_t raw_adc = analogRead(32);
   while(1){
-    vTaskDelay(led_on_time);
+    temp_val = (temprature_sens_read() - 32) / 1.8;
+    ESP_LOGI("sensor", "Core temperature: %f deg. C", temp_val);
+    //sensor discontinued thus constantly at 53.3 deg
+    
+    raw_adc = analogRead(32);
+    ESP_LOGI("sensor", "Raw ADC value at pin 32: %u", raw_adc);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
