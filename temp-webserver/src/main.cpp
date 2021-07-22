@@ -79,6 +79,7 @@ void sensorHub(void *parameter){
 void wifiStWs(void *parameter){
   Serial.begin(115200);
   WiFi.softAP(FACTORY_WIFI_SSID, FACTORY_WIFI_PSSWD);
+  ESP_LOGI("wifi","Local IP address: ");
   Serial.println(WiFi.softAPIP());
   while(1){
     vTaskDelay(led_on_time);
@@ -168,8 +169,7 @@ String readTemperature(){
   }
 
   // Check if any reads failed and exit early (to try again).
-  if(t == 0){    
-    // Serial.println("Failed to read from DHT sensor!");
+  if(t == 0){
     return "--";
   }else{
     return String(t);
