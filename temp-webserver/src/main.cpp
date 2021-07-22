@@ -1,8 +1,13 @@
 #include <Arduino.h>
 
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+
 #define TASKSTACK1  1024 
 #define TASKSTACK2  8192
 #define TASKSTACK3  16384
+#define TASKSTACK4  16384
 
 // Pins
 static const int led_pin = LED_BUILTIN;
@@ -11,6 +16,7 @@ static const int led_pin = LED_BUILTIN;
 static TaskHandle_t task_1 = NULL; //blink task
 static TaskHandle_t task_2 = NULL; //sensorsTask
 static TaskHandle_t task_3 = NULL; //wifi comm. task
+static TaskHandle_t task_4 = NULL; //wifi comm. task
 
 // Queue Setting
 static const uint8_t msg_queue_len = 5;
@@ -29,6 +35,18 @@ uint8_t temprature_sens_read();
 }
 #endif
 uint8_t temprature_sens_read();
+
+// IPv4 setup
+IPAddress local_IP(192, 168, 1, 5);
+// Gateway IP address
+IPAddress gateway(192, 168, 1, 1);
+
+IPAddress subnet(255, 255, 0, 0);
+IPAddress primaryDNS(8, 8, 8, 8);
+IPAddress secondaryDNS(8, 8, 4, 4);
+
+// AsyncWebServer object on port 80
+AsyncWebServer server(80);
 
 
 void toggleLED(void *parameter){
@@ -55,6 +73,10 @@ void sensorHub(void *parameter){
 }
 
 void wifiStWs(void *parameter){
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+    ESP_LOGE("wifi","STA Failed to configure");
+  }
+  WiFi.softAP(FACTORY_WIFI_SSID, FACTORY_WIFI_PSSWD);
   while(1){
     vTaskDelay(led_on_time);
   }
@@ -90,11 +112,21 @@ void setup() {
   
   xTaskCreatePinnedToCore(
               wifiStWs,
-              "WiFi STA WS",
+              "WiFi AP WS",
               TASKSTACK3,
               NULL,
               3,
               &task_3,
+              1
+  );
+
+  xTaskCreatePinnedToCore(
+              wifiStWs,
+              "Async Webserver",
+              TASKSTACK4,
+              NULL,
+              4,
+              &task_4,
               1
   );
 }
