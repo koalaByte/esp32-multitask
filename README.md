@@ -16,7 +16,7 @@ Separate code for arduino-ide added for ease of use; libraries used are included
 No special config required, direct run command or program can be executed.
 To play around with the config, experiment with platformio.ini file.
 
-## setting for arduino
+## settings for arduino
 
 ![arduino-settings](img/esp32-ard.png "")
 
@@ -33,7 +33,7 @@ To play around with the config, experiment with platformio.ini file.
 
  - Normal power up.
     - scan for "espmulti" hotspot (passkey is same)
-    
+
  - Usb connection to a PC
     - Set baud 115200
     - Reset the board
